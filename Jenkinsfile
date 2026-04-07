@@ -15,7 +15,7 @@ pipeline {
         K8S_NAMESPACE = 'default'
         
         // 4. SonarQube 配置
-        SONARQUBE_URL = 'http://172.21.196.15:9000'  // 修改这里！添加端口
+        SONARQUBE_URL = '172.21.196.15:9000'  // 修改这里！添加端口
         
         // 5. 凭证 ID（根据你在 Jenkins 的实际配置）
         HARBOR_CREDS_ID = 'HARBOR_CRED'
