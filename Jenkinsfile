@@ -31,11 +31,10 @@ pipeline {
         stage('传输文件到K3s主机') {
             steps {
                 sh '''
-                    ssh ${SSH_OPT} root@${K3S_IP} "mkdir -p /opt/spring-petclinic"
-                    
-                    # 传输文件（带免校验参数）
-                    scp ${SSH_OPT} -r target/ root@${K3S_IP}:/opt/spring-petclinic/
-                    scp ${SSH_OPT} Dockerfile root@${K3S_IP}:/opt/spring-petclinic/
+                    SSH_OPT="-o StrictHostKeyChecking=no"
+                    ssh $SSH_OPT root@${K3S_IP} "mkdir -p /opt/spring-petclinic"
+                    scp $SSH_OPT -r target/ root@${K3S_IP}:/opt/spring-petclinic/
+                    scp $SSH_OPT Dockerfile root@${K3S_IP}:/opt/spring-petclinic/
                 '''
             }
         }
