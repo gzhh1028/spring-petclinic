@@ -10,14 +10,10 @@ pipeline {
     }
     
     stages {
-        // 1. 拉代码
         stage('拉取代码') {
-            steps {
-                checkout scm
-            }
+            steps { checkout scm }
         }
 
-        // 2. 编译（在 Jenkins 本机）
         stage('编译打包') {
             steps {
                 sh '''
@@ -27,49 +23,101 @@ pipeline {
             }
         }
 
-        // 3. 把代码传到 16 机器
-        stage('传输文件到K3s主机') {
+        stage('生成Dockerfile') {
             steps {
                 sh '''
-                    ssh ${SSH_OPT} root@${K3S_IP} "mkdir -p /opt/spring-petclinic"
-                    
-                    # 传输文件（带免校验参数）
-                    scp ${SSH_OPT} -r target/ root@${K3S_IP}:/opt/spring-petclinic/
-                    scp ${SSH_OPT} Dockerfile root@${K3S_IP}:/opt/spring-petclinic/
+                    cat > Dockerfile << 'EOF'
+FROM openjdk:17-jre-slim
+COPY target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
                 '''
             }
         }
 
-        // 4. 在 16 机器上构建镜像
-        stage('在K3s构建Docker镜像') {
+        // ===================== 你写的正确格式 =====================
+        stage('传输文件到K3s') {
+            environment {
+                SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+            }
             steps {
-                sh '''
-                    ssh root@${K3S_IP} "cd /opt/spring-petclinic && docker build -t ${DOCKER_IMAGE} ."
-                '''
+                sh """
+                    ssh \${SSH_OPTS} root@${K3S_IP} "mkdir -p /opt/spring-petclinic"
+                    scp \${SSH_OPTS} -r target/ root@${K3S_IP}:/opt/spring-petclinic/
+                    scp \${SSH_OPTS} Dockerfile root@${K3S_IP}:/opt/spring-petclinic/
+                """
+            }
+        }
+        // ==========================================================
+
+        stage('在K3s构建镜像') {
+            environment {
+                SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+            }
+            steps {
+                sh """
+                    ssh \${SSH_OPTS} root@${K3S_IP} "cd /opt/spring-petclinic && docker build -t ${DOCKER_IMAGE} ."
+                """
             }
         }
 
-        // 5. 推送镜像
-        stage('推送镜像到Harbor') {
+        stage('推送镜像') {
+            environment {
+                SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'HARBOR_CRED', usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
-                    sh '''
-                        ssh root@${K3S_IP} "docker login ${HARBOR_URL} -u ${HARBOR_USER} -p ${HARBOR_PASS}"
-                        ssh root@${K3S_IP} "docker push ${DOCKER_IMAGE}"
-                    '''
+                    sh """
+                        ssh \${SSH_OPTS} root@${K3S_IP} "docker login ${HARBOR_URL} -u ${HARBOR_USER} -p ${HARBOR_PASS}"
+                        ssh \${SSH_OPTS} root@${K3S_IP} "docker push ${DOCKER_IMAGE}"
+                    """
                 }
             }
         }
 
-        // 6. 在K3s上部署
         stage('部署到K3s') {
+            environment {
+                SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+            }
             steps {
-                sh '''
-                    ssh root@${K3S_IP} "kubectl set image deployment/spring-petclinic spring-petclinic=${DOCKER_IMAGE} -n default"
-                    ssh root@${K3S_IP} "kubectl rollout restart deployment/spring-petclinic -n default"
+                sh """
+                    ssh \${SSH_OPTS} root@${K3S_IP} "kubectl apply -f - << EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-petclinic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spring-petclinic
+  template:
+    metadata:
+      labels:
+        app: spring-petclinic
+    spec:
+      containers:
+      - name: spring-petclinic
+        image: ${DOCKER_IMAGE}
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring-petclinic
+spec:
+  selector:
+    app: spring-petclinic
+  ports:
+  - port: 80
+    targetPort: 8080
+EOF"
+                    ssh \${SSH_OPTS} root@${K3S_IP} "kubectl rollout restart deploy spring-petclinic"
                     sleep 10
-                    ssh root@${K3S_IP} "kubectl get pods"
-                '''
+                    ssh \${SSH_OPTS} root@${K3S_IP} "kubectl get pods"
+                """
             }
         }
     }
