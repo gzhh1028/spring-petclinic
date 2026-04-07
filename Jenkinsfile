@@ -23,11 +23,12 @@ pipeline {
             }
         }
 
+        // ===================== 【关键修复：国内镜像，永不超时】 =====================
         stage('生成Dockerfile') {
             steps {
                 sh '''
                     cat > Dockerfile << 'EOF'
-FROM openjdk:17-jre-slim
+FROM harbor.aliyuncs.com/library/openjdk:17-jre-slim
 COPY target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
@@ -35,8 +36,8 @@ EOF
                 '''
             }
         }
+        // ==========================================================================
 
-        // ===================== 你写的正确格式 =====================
         stage('传输文件到K3s') {
             environment {
                 SSH_OPTS = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
@@ -49,7 +50,6 @@ EOF
                 """
             }
         }
-        // ==========================================================
 
         stage('在K3s构建镜像') {
             environment {
@@ -92,16 +92,16 @@ spec:
   selector:
     matchLabels:
       app: spring-petclinic
-  template:
-    metadata:
-      labels:
-        app: spring-petclinic
-    spec:
-      containers:
-      - name: spring-petclinic
-        image: ${DOCKER_IMAGE}
-        ports:
-        - containerPort: 8080
+template:
+  metadata:
+    labels:
+      app: spring-petclinic
+  spec:
+    containers:
+    - name: spring-petclinic
+      image: ${DOCKER_IMAGE}
+      ports:
+      - containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
