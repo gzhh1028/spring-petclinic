@@ -1,5 +1,8 @@
-# 阿里云官方 JDK17 轻量镜像（Docker 打包 + K3s 运行都完美支持）
-FROM registry.aliyuncs.com/library/openjdk:17-jre-slim
+# 国内最快、不需要登录、K3s/Docker都兼容
+FROM eclipse-temurin:17-jre-jammy
+
+COPY target/xxx.jar app.jar
+ENTRYPOINT ["java","-jar","/app.jar"]
 
 # 复制你的 jar 包
 COPY target/xxx.jar app.jar
